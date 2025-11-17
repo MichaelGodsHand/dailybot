@@ -1,24 +1,20 @@
-# Base image with Python
 FROM python:3.11-slim
 
 # Install uv
 RUN pip install uv
 
-# Set working directory
 WORKDIR /app
 
-# Copy project files
+# Copy only dependency files first for caching
 COPY pyproject.toml .
-COPY uv.lock .    # optional, copy only if you have a lock file
-COPY server.py .
-COPY src ./src     # if your code lives inside src/
-COPY . .
+COPY uv.lock . 2>/dev/null || true
 
-# Install dependencies (this reads pyproject.toml)
+# Install dependencies from pyproject.toml
 RUN uv sync
 
-# Expose port (optional)
+# Copy the rest of the project (server.py, etc.)
+COPY . .
+
 EXPOSE 8080
 
-# Run the server with uv
 CMD ["uv", "run", "server.py"]
