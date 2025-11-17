@@ -127,6 +127,7 @@ async def run_bot(room_url: str):
                     min_volume=0.6,
                 )
             ),
+            audio_out_is_live=True,  # Enable live audio output
         )
     )
     
@@ -168,18 +169,33 @@ async def run_bot(room_url: str):
     @transport.event_handler("on_first_participant_joined")
     async def on_first_participant_joined(transport, participant):
         logger.info(f"First participant joined: {participant}")
+        # Start the bot speaking
         await task.queue_frames([LLMRunFrame()])
+        # Ensure bot audio is enabled
+        await transport.set_audio_enabled(True)
     
     @transport.event_handler("on_participant_left")
     async def on_participant_left(transport, participant, reason):
-        logger.info(f"Participant left: {participant}")
+        logger.info(f"Participant left: {participant}, reason: {reason}")
         await task.cancel()
     
     @transport.event_handler("on_call_state_updated")
     async def on_call_state_updated(transport, state):
+        logger.info(f"Call state updated: {state}")
         if state == "left":
             logger.info("Bot left the call")
             await task.cancel()
+    
+    @transport.event_handler("on_audio_updated")
+    async def on_audio_updated(transport, audio_state):
+        logger.debug(f"Audio updated: {audio_state}")
+    
+    # Log when bot sends audio
+    original_write = transport._daily_call_object.send_audio_frame
+    def logged_write(*args, **kwargs):
+        logger.debug(f"Sending audio frame to Daily")
+        return original_write(*args, **kwargs)
+    transport._daily_call_object.send_audio_frame = logged_write
     
     runner = PipelineRunner()
     await runner.run(task)
