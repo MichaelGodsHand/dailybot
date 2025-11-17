@@ -59,7 +59,7 @@ if not GOOGLE_VERTEX_CREDENTIALS:
 def fix_credentials():
     """
     Fix GOOGLE_VERTEX_CREDENTIALS so Pipecat can parse it.
-    Supports both file paths and JSON strings.
+    Supports both file paths and JSON strings (including quoted JSON strings from .env files).
     """
     creds = GOOGLE_VERTEX_CREDENTIALS
     
@@ -68,6 +68,23 @@ def fix_credentials():
     
     # Strip whitespace
     creds = creds.strip()
+    
+    # Remove surrounding quotes if present (handles .env files that quote the JSON string)
+    if (creds.startswith('"') and creds.endswith('"')) or (creds.startswith("'") and creds.endswith("'")):
+        creds = creds[1:-1]
+    
+    # Check if it looks like JSON (starts with { or [)
+    if creds.startswith('{') or creds.startswith('['):
+        # Try to parse as JSON first
+        try:
+            creds_dict = json.loads(creds)
+            # Ensure proper newline formatting for private_key
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            return json.dumps(creds_dict)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, continue to check if it's a file path
+            pass
     
     # Determine the file path - try multiple locations
     file_path = None
@@ -101,7 +118,7 @@ def fix_credentials():
         except (FileNotFoundError, json.JSONDecodeError) as e:
             raise ValueError(f"Failed to read credentials from file '{file_path}': {e}") from e
     else:
-        # Assume it's a JSON string
+        # Last attempt: try to parse as JSON (might be unquoted JSON string)
         try:
             creds_dict = json.loads(creds)
         except json.JSONDecodeError as e:
