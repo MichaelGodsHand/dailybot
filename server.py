@@ -172,7 +172,7 @@ async def run_bot(room_url: str, token: str):
         # Create task
         task = PipelineTask(
             pipeline,
-            PipelineParams(
+            params=PipelineParams(
                 allow_interruptions=True,
                 enable_metrics=True,
                 enable_usage_metrics=True,
