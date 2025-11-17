@@ -23,6 +23,7 @@ from pipecat.services.cartesia import CartesiaTTSService
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.services.daily import DailyParams, DailyTransport
 from pipecat.processors.frame_processor import FrameProcessor
+from pipecat.audio.vad.silero import SileroVADAnalyzer
 
 from loguru import logger
 
@@ -134,30 +135,26 @@ async def run_bot(room_url: str, token: str):
     try:
         logger.info(f"Starting bot for room: {room_url}")
         
-        # CRITICAL FIX: Initialize transport with proper audio and transcription settings
+        # CRITICAL FIX: Initialize transport with Silero VAD (like reference code)
         transport = DailyTransport(
             room_url,
             token,
             "Voice Bot",
             DailyParams(
-                audio_in_enabled=True,  # CRITICAL: Enable audio input
-                audio_in_sample_rate=16000,
+                audio_in_enabled=True,
                 audio_out_enabled=True,
-                audio_out_sample_rate=16000,
+                video_out_enabled=False,
+                vad_analyzer=SileroVADAnalyzer(),  # CRITICAL: Use Silero VAD
                 transcription_enabled=True,
-                vad_enabled=True,  # Enable VAD for better speech detection
-                vad_analyzer=None,  # Use Daily's built-in VAD
-                vad_audio_passthrough=True,  # Pass audio through even when not speaking
             ),
         )
 
-        # Initialize TTS service with proper audio settings
+        # Initialize TTS service
         if CARTESIA_API_KEY:
             logger.info("Using Cartesia TTS")
             tts = CartesiaTTSService(
                 api_key=CARTESIA_API_KEY,
                 voice_id="a0e99841-438c-4a64-b679-ae501e7d6091",  # Conversational voice
-                sample_rate=16000,
             )
         else:
             # Fallback to OpenAI TTS if Cartesia not available
@@ -212,10 +209,13 @@ async def run_bot(room_url: str, token: str):
             ),
         )
 
-        # Run the bot
+        # CRITICAL FIX: Set up event handlers like reference code
         @transport.event_handler("on_first_participant_joined")
         async def on_first_participant_joined(transport, participant):
             logger.info(f"First participant joined: {participant}")
+            # CRITICAL: Start capturing transcription for the participant
+            await transport.capture_participant_transcription(participant["id"])
+            
             # Give a moment for audio to be ready
             await asyncio.sleep(0.5)
             try:
@@ -239,17 +239,11 @@ async def run_bot(room_url: str, token: str):
             logger.info(f"Participant left: {participant}, reason: {reason}")
             await task.queue_frame(EndFrame())
 
-        @transport.event_handler("on_dialin_ready")
-        async def on_dialin_ready(transport, cdata):
-            logger.info("Dial-in ready")
-
-        @transport.event_handler("on_transcription_message")
-        async def on_transcription_message(transport, message):
-            """Log raw transcription messages for debugging"""
-            if message.get("is_final"):
-                logger.info(f"📝 Final transcription: {message.get('text', '')}")
-            else:
-                logger.debug(f"📝 Interim transcription: {message.get('text', '')}")
+        @transport.event_handler("on_participant_joined")
+        async def on_participant_joined(transport, participant):
+            logger.info(f"Participant joined: {participant}")
+            # Capture transcription for any new participant
+            await transport.capture_participant_transcription(participant["id"])
 
         logger.info("Starting pipeline runner")
         runner = PipelineRunner()
