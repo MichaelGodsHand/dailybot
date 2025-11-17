@@ -121,26 +121,29 @@ async def run_bot(room_url: str, token: str):
     try:
         logger.info(f"Starting bot for room: {room_url}")
         
-        # Initialize transport
+        # Initialize transport with proper audio settings
         transport = DailyTransport(
             room_url,
             token,
             "Voice Bot",
             DailyParams(
                 audio_out_enabled=True,
+                audio_out_sample_rate=16000,
+                audio_out_is_live=True,
                 audio_in_enabled=True,
+                audio_in_sample_rate=16000,
                 video_out_enabled=False,
-                vad_enabled=True,
-                transcription_enabled=False,
+                transcription_enabled=True,  # Enable transcription for STT
             ),
         )
 
-        # Initialize TTS service
+        # Initialize TTS service with proper audio settings
         if CARTESIA_API_KEY:
             logger.info("Using Cartesia TTS")
             tts = CartesiaTTSService(
                 api_key=CARTESIA_API_KEY,
                 voice_id="a0e99841-438c-4a64-b679-ae501e7d6091",  # Conversational voice
+                sample_rate=16000,
             )
         else:
             # Fallback to OpenAI TTS if Cartesia not available
