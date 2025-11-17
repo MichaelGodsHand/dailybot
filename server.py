@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import aiohttp
+import time
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
@@ -56,7 +57,7 @@ async def create_daily_room() -> tuple[str, str]:
             },
             json={
                 "properties": {
-                    "exp": int(asyncio.get_event_loop().time()) + 3600,  # 1 hour
+                    "exp": int(time.time()) + 3600,  # 1 hour from now
                     "enable_chat": False,
                     "enable_emoji_reactions": False,
                 }
