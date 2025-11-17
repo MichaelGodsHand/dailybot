@@ -62,9 +62,21 @@ async def create_daily_room() -> tuple[str, str]:
                 }
             },
         ) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                logger.error(f"Failed to create room: {response.status} - {error_text}")
+                raise Exception(f"Failed to create Daily room: {response.status}")
+            
             room_data = await response.json()
-            room_url = room_data["url"]
-            room_name = room_data["name"]
+            logger.debug(f"Room data: {room_data}")
+            
+            # Daily API returns 'url' and 'name' fields
+            room_url = room_data.get("url")
+            room_name = room_data.get("name")
+            
+            if not room_url or not room_name:
+                logger.error(f"Missing url or name in room response: {room_data}")
+                raise Exception("Invalid room data from Daily API")
 
         # Create token
         async with session.post(
@@ -80,9 +92,20 @@ async def create_daily_room() -> tuple[str, str]:
                 }
             },
         ) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                logger.error(f"Failed to create token: {response.status} - {error_text}")
+                raise Exception(f"Failed to create Daily token: {response.status}")
+            
             token_data = await response.json()
-            token = token_data["token"]
+            logger.debug(f"Token data: {token_data}")
+            token = token_data.get("token")
+            
+            if not token:
+                logger.error(f"Missing token in response: {token_data}")
+                raise Exception("Invalid token data from Daily API")
 
+    logger.info(f"Successfully created room: {room_url}")
     return room_url, token
 
 
@@ -222,5 +245,5 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.getenv("PORT", "8080"))
+    port = int(os.getenv("PORT", "8000"))
     uvicorn.run(app, host="0.0.0.0", port=port)
