@@ -41,9 +41,10 @@ async def create_daily_room():
         }
         
         # Create room with default settings
+        import time
         data = {
             "properties": {
-                "exp": int(os.time()) + 3600,  # 1 hour expiry
+                "exp": int(time.time()) + 3600,  # 1 hour expiry
             }
         }
         
@@ -53,14 +54,17 @@ async def create_daily_room():
             json=data
         ) as response:
             if response.status != 200:
-                raise HTTPException(status_code=500, detail="Failed to create Daily room")
+                error_text = await response.text()
+                logger.error(f"Failed to create Daily room: {response.status} - {error_text}")
+                raise HTTPException(status_code=500, detail=f"Failed to create Daily room: {error_text}")
             
             room_data = await response.json()
+            logger.info(f"Created Daily room: {room_data['url']}")
             return room_data["url"]
 
 
 def fix_credentials():
-    """Fix GOOGLE_VERTEX_CREDENTIALS for Pipecat"""
+    """Fix GOOGLE_VERTEX_CREDENTIALS for Pipecat - handles both file paths and JSON strings"""
     creds = os.getenv("GOOGLE_VERTEX_CREDENTIALS")
     
     if not creds:
@@ -68,19 +72,22 @@ def fix_credentials():
     
     creds = creds.strip()
     
-    # If it's a file path
-    if creds.endswith('.json') and os.path.isfile(creds):
-        with open(creds, 'r') as f:
-            creds_dict = json.load(f)
-    else:
-        # Assume it's a JSON string
-        try:
-            creds_dict = json.loads(creds)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid GOOGLE_VERTEX_CREDENTIALS: {e}")
+    # Try to parse as JSON first (for inline credentials)
+    try:
+        creds_dict = json.loads(creds)
+        logger.info("Loaded credentials from inline JSON string")
+    except json.JSONDecodeError:
+        # If parsing fails, try to read as file path
+        if os.path.isfile(creds):
+            with open(creds, 'r') as f:
+                creds_dict = json.load(f)
+            logger.info(f"Loaded credentials from file: {creds}")
+        else:
+            raise ValueError(f"GOOGLE_VERTEX_CREDENTIALS is neither valid JSON nor a valid file path: {creds[:50]}...")
     
-    # Fix newlines in private key
+    # Fix newlines in private key (they might be escaped in the env var)
     if "private_key" in creds_dict:
+        # Replace escaped newlines with actual newlines
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
     return json.dumps(creds_dict)
@@ -93,6 +100,7 @@ async def run_bot(room_url: str):
     # Get Vertex AI config
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
     location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    voice_name = os.getenv("GEMINI_VOICE_NAME", "Aoede")
     model_id = "gemini-live-2.5-flash-preview-native-audio-09-2025"
     
     model_path = f"projects/{project_id}/locations/{location}/publishers/google/models/{model_id}"
@@ -126,7 +134,7 @@ async def run_bot(room_url: str):
         location=location,
         model=model_path,
         system_instruction=system_instruction,
-        voice_id="Aoede",  # Options: Aoede, Charon, Fenrir, Kore, Puck
+        voice_id=voice_name,  # Use voice from .env
     )
     
     # Create context with greeting
@@ -176,12 +184,12 @@ async def run_bot(room_url: str):
 # FastAPI app
 app = FastAPI()
 
-# Enable CORS
+# Enable CORS - Allow all origins for browser access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=False,  # Set to False when using allow_origins=["*"]
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -189,18 +197,22 @@ app.add_middleware(
 async def start_bot(request: Request):
     """Start a new bot session"""
     try:
+        logger.info("Received /start request")
+        
         # Create a Daily room
         room_url = await create_daily_room()
+        logger.info(f"Created room: {room_url}")
         
         # Start the bot in the background
         import asyncio
         asyncio.create_task(run_bot(room_url))
+        logger.info("Bot task created")
         
         # Return room URL for client to join
         return {"room_url": room_url}
     
     except Exception as e:
-        logger.error(f"Error starting bot: {e}")
+        logger.error(f"Error starting bot: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -212,5 +224,5 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
