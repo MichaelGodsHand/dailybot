@@ -110,6 +110,7 @@ async def run_bot(room_url: str):
     You're having a voice conversation, so speak naturally as you would to a friend."""
     
     # Initialize Daily transport
+    # Note: Using 16kHz for VAD compatibility, Pipecat will resample to 24kHz for Gemini
     transport = DailyTransport(
         room_url,
         None,  # No token needed for public rooms
@@ -117,8 +118,8 @@ async def run_bot(room_url: str):
         DailyParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            audio_in_sample_rate=24000,  # Match Gemini's native rate
-            audio_out_sample_rate=24000,  # Match Gemini's native rate
+            audio_in_sample_rate=16000,  # Silero VAD requires 16kHz or 8kHz
+            audio_out_sample_rate=16000,
             vad_enabled=True,
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
@@ -130,15 +131,14 @@ async def run_bot(room_url: str):
     )
     
     # Initialize Vertex AI LLM
+    # Gemini Live uses 24kHz natively, Pipecat handles resampling
     llm = GeminiLiveVertexLLMService(
         credentials=fix_credentials(),
         project_id=project_id,
         location=location,
         model=model_path,
         system_instruction=system_instruction,
-        voice_id=voice_name,  # Use voice from .env
-        audio_in_sample_rate=24000,  # Explicitly set sample rate
-        audio_out_sample_rate=24000,
+        voice_id=voice_name,
     )
     
     # Create context with greeting
@@ -160,8 +160,8 @@ async def run_bot(room_url: str):
     task = PipelineTask(
         pipeline,
         params=PipelineParams(
-            audio_in_sample_rate=24000,  # Match Gemini's native rate
-            audio_out_sample_rate=24000,  # Match Gemini's native rate
+            audio_in_sample_rate=16000,  # Transport audio rate (VAD compatible)
+            audio_out_sample_rate=16000,  # Transport audio rate
         ),
     )
     
