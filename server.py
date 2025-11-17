@@ -186,17 +186,6 @@ async def run_bot(room_url: str):
             logger.info("Bot left the call")
             await task.cancel()
     
-    @transport.event_handler("on_audio_updated")
-    async def on_audio_updated(transport, audio_state):
-        logger.debug(f"Audio updated: {audio_state}")
-    
-    # Log when bot sends audio
-    original_write = transport._daily_call_object.send_audio_frame
-    def logged_write(*args, **kwargs):
-        logger.debug(f"Sending audio frame to Daily")
-        return original_write(*args, **kwargs)
-    transport._daily_call_object.send_audio_frame = logged_write
-    
     runner = PipelineRunner()
     await runner.run(task)
 
