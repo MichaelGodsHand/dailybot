@@ -16,11 +16,10 @@ from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.cartesia import CartesiaTTSService
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.services.daily import DailyParams, DailyTransport
-from pipecat.vad.silero import SileroVADAnalyzer
 
 from loguru import logger
 
-# Configure loggexr
+# Configure logger
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
@@ -100,7 +99,6 @@ async def run_bot(room_url: str, token: str):
                 audio_in_enabled=True,
                 video_out_enabled=False,
                 vad_enabled=True,
-                vad_analyzer=SileroVADAnalyzer(),
                 transcription_enabled=False,
             ),
         )
@@ -224,5 +222,5 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)
