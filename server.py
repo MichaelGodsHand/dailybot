@@ -134,12 +134,14 @@ async def run_bot(room_url: str, token: str):
     try:
         logger.info(f"Starting bot for room: {room_url}")
         
-        # Initialize transport with proper audio settings
+        # CRITICAL FIX: Initialize transport with proper audio and transcription settings
         transport = DailyTransport(
             room_url,
             token,
             "Voice Bot",
             DailyParams(
+                audio_in_enabled=True,  # CRITICAL: Enable audio input
+                audio_in_sample_rate=16000,
                 audio_out_enabled=True,
                 audio_out_sample_rate=16000,
                 transcription_enabled=True,
@@ -173,11 +175,11 @@ async def run_bot(room_url: str, token: str):
             model="gpt-4o",
         )
 
-        # Initialize context
+        # Initialize context with better system prompt
         messages = [
             {
                 "role": "system",
-                "content": "You are a helpful and friendly voice assistant. Keep your responses concise and conversational, as this is a voice conversation. Be warm and engaging.",
+                "content": "You are a helpful and friendly voice assistant. Keep your responses concise and conversational (2-3 sentences max), as this is a voice conversation. Be warm, engaging, and respond naturally to what the user says.",
             },
         ]
         context = OpenAILLMContext(messages)
@@ -214,6 +216,8 @@ async def run_bot(room_url: str, token: str):
         @transport.event_handler("on_first_participant_joined")
         async def on_first_participant_joined(transport, participant):
             logger.info(f"First participant joined: {participant}")
+            # Give a moment for audio to be ready
+            await asyncio.sleep(0.5)
             try:
                 # Greet the user
                 await task.queue_frames([
@@ -221,11 +225,12 @@ async def run_bot(room_url: str, token: str):
                         [
                             {
                                 "role": "system",
-                                "content": "Greet the user warmly and ask how you can help them today.",
+                                "content": "Greet the user warmly with 'Hello! How can I help you today?' Keep it brief.",
                             }
                         ]
                     )
                 ])
+                logger.info("Greeting queued")
             except Exception as e:
                 logger.error(f"Error greeting user: {e}")
 
@@ -242,7 +247,7 @@ async def run_bot(room_url: str, token: str):
         async def on_transcription_message(transport, message):
             """Log raw transcription messages for debugging"""
             if message.get("is_final"):
-                logger.debug(f"📝 Final transcription: {message.get('text', '')}")
+                logger.info(f"📝 Final transcription: {message.get('text', '')}")
             else:
                 logger.debug(f"📝 Interim transcription: {message.get('text', '')}")
 
