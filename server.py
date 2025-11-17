@@ -117,6 +117,8 @@ async def run_bot(room_url: str):
         DailyParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
+            audio_in_sample_rate=24000,  # Match Gemini's native rate
+            audio_out_sample_rate=24000,  # Match Gemini's native rate
             vad_enabled=True,
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
@@ -135,6 +137,8 @@ async def run_bot(room_url: str):
         model=model_path,
         system_instruction=system_instruction,
         voice_id=voice_name,  # Use voice from .env
+        audio_in_sample_rate=24000,  # Explicitly set sample rate
+        audio_out_sample_rate=24000,
     )
     
     # Create context with greeting
@@ -156,8 +160,8 @@ async def run_bot(room_url: str):
     task = PipelineTask(
         pipeline,
         params=PipelineParams(
-            audio_in_sample_rate=16000,
-            audio_out_sample_rate=16000,
+            audio_in_sample_rate=24000,  # Match Gemini's native rate
+            audio_out_sample_rate=24000,  # Match Gemini's native rate
         ),
     )
     
@@ -224,5 +228,5 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8080))
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
