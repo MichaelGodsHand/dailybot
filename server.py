@@ -112,7 +112,10 @@ async def create_daily_room() -> tuple[str, str]:
 
 async def run_bot(room_url: str, token: str):
     """Run the voice bot in the Daily room"""
+    transport = None
     try:
+        logger.info(f"Starting bot for room: {room_url}")
+        
         # Initialize transport
         transport = DailyTransport(
             room_url,
@@ -129,12 +132,14 @@ async def run_bot(room_url: str, token: str):
 
         # Initialize TTS service
         if CARTESIA_API_KEY:
+            logger.info("Using Cartesia TTS")
             tts = CartesiaTTSService(
                 api_key=CARTESIA_API_KEY,
                 voice_id="a0e99841-438c-4a64-b679-ae501e7d6091",  # Conversational voice
             )
         else:
             # Fallback to OpenAI TTS if Cartesia not available
+            logger.info("Using OpenAI TTS")
             from pipecat.services.openai import OpenAITTSService
             tts = OpenAITTSService(
                 api_key=OPENAI_API_KEY,
@@ -142,6 +147,7 @@ async def run_bot(room_url: str, token: str):
             )
 
         # Initialize LLM service
+        logger.info("Initializing OpenAI LLM")
         llm = OpenAILLMService(
             api_key=OPENAI_API_KEY,
             model="gpt-4o",
@@ -158,6 +164,7 @@ async def run_bot(room_url: str, token: str):
         context_aggregator = llm.create_context_aggregator(context)
 
         # Build pipeline
+        logger.info("Building pipeline")
         pipeline = Pipeline(
             [
                 transport.input(),
@@ -183,29 +190,46 @@ async def run_bot(room_url: str, token: str):
         @transport.event_handler("on_first_participant_joined")
         async def on_first_participant_joined(transport, participant):
             logger.info(f"First participant joined: {participant}")
-            # Greet the user
-            await task.queue_frames([
-                LLMMessagesFrame(
-                    [
-                        {
-                            "role": "system",
-                            "content": "Greet the user warmly and ask how you can help them today.",
-                        }
-                    ]
-                )
-            ])
+            try:
+                # Greet the user
+                await task.queue_frames([
+                    LLMMessagesFrame(
+                        [
+                            {
+                                "role": "system",
+                                "content": "Greet the user warmly and ask how you can help them today.",
+                            }
+                        ]
+                    )
+                ])
+            except Exception as e:
+                logger.error(f"Error greeting user: {e}")
 
         @transport.event_handler("on_participant_left")
         async def on_participant_left(transport, participant, reason):
-            logger.info(f"Participant left: {participant}")
+            logger.info(f"Participant left: {participant}, reason: {reason}")
             await task.queue_frame(EndFrame())
 
+        @transport.event_handler("on_dialin_ready")
+        async def on_dialin_ready(transport, cdata):
+            logger.info("Dial-in ready")
+
+        logger.info("Starting pipeline runner")
         runner = PipelineRunner()
         await runner.run(task)
+        
+        logger.info("Pipeline runner completed")
 
     except Exception as e:
-        logger.error(f"Error running bot: {e}")
+        logger.error(f"Error running bot: {e}", exc_info=True)
         raise
+    finally:
+        if transport:
+            try:
+                logger.info("Cleaning up transport")
+                await transport.cleanup()
+            except Exception as e:
+                logger.error(f"Error cleaning up transport: {e}")
 
 
 @app.post("/start")
@@ -246,5 +270,5 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)
