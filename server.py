@@ -20,7 +20,7 @@ from pipecat.vad.silero import SileroVADAnalyzer
 
 from loguru import logger
 
-# Configure logger
+# Configure loggexr
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
 
