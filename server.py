@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from pipecat.frames.frames import EndFrame, LLMMessagesFrame
+from pipecat.frames.frames import EndFrame, LLMMessagesFrame, TranscriptionFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -22,6 +22,7 @@ from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.cartesia import CartesiaTTSService
 from pipecat.services.openai import OpenAILLMService
 from pipecat.transports.services.daily import DailyParams, DailyTransport
+from pipecat.processors.frame_processor import FrameProcessor
 
 from loguru import logger
 
@@ -115,6 +116,18 @@ async def create_daily_room() -> tuple[str, str]:
     return room_url, token
 
 
+class TranscriptionLogger(FrameProcessor):
+    """Simple processor to log transcriptions"""
+    
+    async def process_frame(self, frame, direction):
+        await super().process_frame(frame, direction)
+        
+        if isinstance(frame, TranscriptionFrame):
+            logger.info(f"👤 User said: {frame.text}")
+        
+        await self.push_frame(frame, direction)
+
+
 async def run_bot(room_url: str, token: str):
     """Run the voice bot in the Daily room"""
     transport = None
@@ -129,11 +142,10 @@ async def run_bot(room_url: str, token: str):
             DailyParams(
                 audio_out_enabled=True,
                 audio_out_sample_rate=16000,
-                audio_out_is_live=True,
-                audio_in_enabled=True,
-                audio_in_sample_rate=16000,
-                video_out_enabled=False,
-                transcription_enabled=True,  # Enable transcription for STT
+                transcription_enabled=True,
+                vad_enabled=True,  # Enable VAD for better speech detection
+                vad_analyzer=None,  # Use Daily's built-in VAD
+                vad_audio_passthrough=True,  # Pass audio through even when not speaking
             ),
         )
 
@@ -171,11 +183,15 @@ async def run_bot(room_url: str, token: str):
         context = OpenAILLMContext(messages)
         context_aggregator = llm.create_context_aggregator(context)
 
+        # Create transcription logger
+        transcription_logger = TranscriptionLogger()
+
         # Build pipeline
         logger.info("Building pipeline")
         pipeline = Pipeline(
             [
                 transport.input(),
+                transcription_logger,  # Log transcriptions
                 context_aggregator.user(),
                 llm,
                 tts,
@@ -221,6 +237,14 @@ async def run_bot(room_url: str, token: str):
         @transport.event_handler("on_dialin_ready")
         async def on_dialin_ready(transport, cdata):
             logger.info("Dial-in ready")
+
+        @transport.event_handler("on_transcription_message")
+        async def on_transcription_message(transport, message):
+            """Log raw transcription messages for debugging"""
+            if message.get("is_final"):
+                logger.debug(f"📝 Final transcription: {message.get('text', '')}")
+            else:
+                logger.debug(f"📝 Interim transcription: {message.get('text', '')}")
 
         logger.info("Starting pipeline runner")
         runner = PipelineRunner()
