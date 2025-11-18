@@ -14,11 +14,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from pipecat.frames.frames import EndFrame, LLMMessagesFrame
+from pipecat.frames.frames import EndFrame, LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.services.google.gemini_live.llm_vertex import GeminiLiveVertexLLMService
 from pipecat.transports.services.daily import DailyParams, DailyTransport
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -256,12 +257,17 @@ Your goal is to be helpful while keeping the conversation flowing naturally."""
             ]
         )
 
-        # Build pipeline (simplified - no context aggregator needed for basic chat)
+        # Use context aggregator for proper conversation flow
+        context_aggregator = LLMContextAggregatorPair(context)
+
+        # Build pipeline with context aggregator
         pipeline = Pipeline(
             [
                 transport.input(),
+                context_aggregator.user(),
                 llm,
                 transport.output(),
+                context_aggregator.assistant(),
             ]
         )
 
@@ -286,8 +292,9 @@ Your goal is to be helpful while keeping the conversation flowing naturally."""
             # Give a moment for audio to be ready, then start conversation
             await asyncio.sleep(0.5)
             try:
-                await task.queue_frames([LLMMessagesFrame(context.messages)])
-                logger.info("Initial greeting queued")
+                # Use LLMRunFrame to immediately trigger the LLM with the initial context
+                await task.queue_frames([LLMRunFrame()])
+                logger.info("Initial greeting triggered with LLMRunFrame")
             except Exception as e:
                 logger.error(f"Error sending greeting: {e}")
 
