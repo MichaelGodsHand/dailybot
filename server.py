@@ -4,6 +4,7 @@ import asyncio
 import aiohttp
 import time
 import json
+import atexit
 
 from dotenv import load_dotenv
 
@@ -13,6 +14,7 @@ load_dotenv()
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pyngrok import ngrok
 
 from pipecat.frames.frames import EndFrame, LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -30,6 +32,9 @@ from loguru import logger
 # Configure logger
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG")
+
+# Global variable to store the ngrok tunnel
+ngrok_tunnel = None
 
 # FastAPI app
 app = FastAPI()
@@ -55,6 +60,51 @@ if not GOOGLE_CLOUD_PROJECT_ID:
     raise ValueError("GOOGLE_CLOUD_PROJECT_ID must be set")
 if not GOOGLE_VERTEX_CREDENTIALS:
     raise ValueError("GOOGLE_VERTEX_CREDENTIALS must be set")
+
+
+def start_ngrok_tunnel(port=8000):
+    """Start ngrok tunnel and return the public URL."""
+    global ngrok_tunnel
+    
+    # Get ngrok auth token from environment or use default
+    ngrok_auth_token = os.getenv("NGROK_AUTH_TOKEN")
+    
+    if ngrok_auth_token:
+        # Set the authtoken
+        ngrok.set_auth_token(ngrok_auth_token)
+        logger.info("Using ngrok auth token from environment")
+    else:
+        logger.warning("NGROK_AUTH_TOKEN not set in environment, using free ngrok (may have limitations)")
+    
+    # Start the tunnel
+    ngrok_tunnel = ngrok.connect(port, "http")
+    
+    # Get the public URL
+    public_url = ngrok_tunnel.public_url
+    
+    logger.info("=" * 60)
+    logger.info("🚀 ngrok tunnel started successfully!")
+    logger.info(f"📞 Public URL: {public_url}")
+    logger.info(f"🌐 Access your bot at: {public_url}/start")
+    logger.info(f"💚 Health check: {public_url}/health")
+    logger.info("=" * 60)
+    
+    # Register cleanup function
+    atexit.register(cleanup_ngrok)
+    
+    return public_url
+
+
+def cleanup_ngrok():
+    """Clean up ngrok tunnel on exit."""
+    global ngrok_tunnel
+    if ngrok_tunnel:
+        try:
+            ngrok.disconnect(ngrok_tunnel.public_url)
+            ngrok.kill()
+            logger.info("ngrok tunnel closed")
+        except Exception as e:
+            logger.error(f"Error closing ngrok tunnel: {e}")
 
 
 def fix_credentials():
@@ -366,4 +416,15 @@ if __name__ == "__main__":
     import uvicorn
     
     port = int(os.getenv("PORT", "8000"))
+    
+    # Start ngrok tunnel before starting the server
+    try:
+        public_url = start_ngrok_tunnel(port)
+        logger.info("🎉 Bot is ready to accept connections!")
+        logger.info(f"📋 Make POST requests to: {public_url}/start")
+    except Exception as e:
+        logger.error(f"Failed to start ngrok tunnel: {e}")
+        logger.warning("⚠️  Continuing without ngrok. Bot will only be accessible locally.")
+    
+    # Start the FastAPI server
     uvicorn.run(app, host="0.0.0.0", port=port)
