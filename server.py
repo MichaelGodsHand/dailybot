@@ -14,11 +14,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from pipecat.frames.frames import EndFrame, LLMMessagesFrame
+from pipecat.frames.frames import EndFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_context import LLMContext, LLMContextAggregator
 from pipecat.services.google.gemini_live.llm_vertex import GeminiLiveVertexLLMService
 from pipecat.transports.services.daily import DailyParams, DailyTransport
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -247,20 +247,18 @@ Your goal is to be helpful while keeping the conversation flowing naturally."""
         )
 
         # Create context with initial greeting
-        context = LLMContext(
-            [
-                {
-                    "role": "user",
-                    "content": "Greet the user warmly with 'Hello! How can I help you today?' Keep it brief and friendly."
-                }
-            ]
-        )
+        context = LLMContext()
+        
+        # Create context aggregator
+        context_aggregator = LLMContextAggregator(context)
 
-        # Build pipeline (simplified - no context aggregator needed for basic chat)
+        # Build pipeline with context aggregator
         pipeline = Pipeline(
             [
                 transport.input(),
+                context_aggregator.user(),
                 llm,
+                context_aggregator.assistant(),
                 transport.output(),
             ]
         )
@@ -286,8 +284,20 @@ Your goal is to be helpful while keeping the conversation flowing naturally."""
             # Give a moment for audio to be ready, then start conversation
             await asyncio.sleep(0.5)
             try:
-                await task.queue_frames([LLMMessagesFrame(context.messages)])
-                logger.info("Initial greeting queued")
+                # Add greeting message and trigger LLM to respond
+                await task.queue_frames([
+                    context_aggregator.user().get_context_frame(),
+                ])
+                # Add a user message to trigger the greeting
+                context.add_message({
+                    "role": "user",
+                    "content": "Please greet me warmly and ask how you can help."
+                })
+                # Queue the context frame to trigger LLM processing
+                await task.queue_frames([
+                    context_aggregator.user().get_context_frame(),
+                ])
+                logger.info("Initial greeting triggered")
             except Exception as e:
                 logger.error(f"Error sending greeting: {e}")
 
