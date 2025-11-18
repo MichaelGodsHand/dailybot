@@ -247,17 +247,17 @@ Your goal is to be helpful while keeping the conversation flowing naturally."""
             voice_id="Aoede",  # Options: Aoede, Charon, Fenrir, Kore, Puck
         )
 
-        # Create context with initial greeting message
+        # Create context with initial greeting
         context = LLMContext(
             [
                 {
                     "role": "user",
-                    "content": "Greet the user warmly and ask how you can help them. Keep it brief and friendly."
+                    "content": "Greet the user warmly with 'Hello! How can I help you today?' Keep it brief and friendly."
                 }
             ]
         )
-        
-        # Create context aggregator pair
+
+        # Use context aggregator for proper conversation flow
         context_aggregator = LLMContextAggregatorPair(context)
 
         # Build pipeline with context aggregator
@@ -289,12 +289,12 @@ Your goal is to be helpful while keeping the conversation flowing naturally."""
             # Start capturing transcription for the participant
             await transport.capture_participant_transcription(participant["id"])
             
-            # Give a moment for audio to be ready, then trigger the greeting
+            # Give a moment for audio to be ready, then start conversation
             await asyncio.sleep(0.5)
             try:
-                # Queue LLMRunFrame to trigger the LLM to process the initial context
+                # Use LLMRunFrame to immediately trigger the LLM with the initial context
                 await task.queue_frames([LLMRunFrame()])
-                logger.info("Initial greeting triggered")
+                logger.info("Initial greeting triggered with LLMRunFrame")
             except Exception as e:
                 logger.error(f"Error sending greeting: {e}")
 
