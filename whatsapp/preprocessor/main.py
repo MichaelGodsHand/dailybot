@@ -108,6 +108,16 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+@app.head("/health")
+async def health_check():
+    """
+    Health check endpoint (HEAD request).
+    Returns 200 OK if the service is running.
+    """
+    return None
+
+
 # Initialize ChromaDB
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma_client.get_or_create_collection(
