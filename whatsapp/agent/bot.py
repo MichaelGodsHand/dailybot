@@ -198,7 +198,7 @@ async def fetch_property_details(params: FunctionCallParams):
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                "http://localhost:8000/query",
+                "https://dailybot-sta5.onrender.com/query",
                 json={
                     "query": query,
                     "number": phone_number
