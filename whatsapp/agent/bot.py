@@ -210,7 +210,7 @@ async def fetch_property_details(params: FunctionCallParams):
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                "http://localhost:8000/query",
+                "https://preprocessor-739298578243.us-central1.run.app/query",
                 json={
                     "query": query,
                     "number": phone_number
