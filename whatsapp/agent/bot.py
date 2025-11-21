@@ -188,17 +188,29 @@ def fix_credentials():
 
 async def fetch_property_details(params: FunctionCallParams):
     """Fetch detailed property information from the API"""
+    logger.info("=" * 60)
+    logger.info("🔧 TOOL CALL TRIGGERED!")
+    logger.info(f"Function: get_property_details")
+    logger.info(f"Arguments: {params.arguments}")
+    logger.info("=" * 60)
+    
     try:
         query = params.arguments["query"]
         phone_number = params.arguments["phone_number"]
         
+        logger.info(f"Processing query: {query}")
+        logger.info(f"Phone number: {phone_number}")
+        
         # Ensure phone number is in correct format (+91XXXXXXXXXX)
         if not phone_number.startswith("+91"):
             phone_number = f"+91{phone_number}"
+            logger.info(f"Formatted phone number: {phone_number}")
+        
+        logger.info("Making API call to http://localhost:8000/query")
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                "https://preprocessor-739298578243.us-central1.run.app/query",
+                "http://localhost:8000/query",
                 json={
                     "query": query,
                     "number": phone_number
@@ -207,19 +219,25 @@ async def fetch_property_details(params: FunctionCallParams):
             response.raise_for_status()
             data = response.json()
             
+            logger.info(f"API Response: {data}")
+            
             # Return the summary from the API response
             if data.get("status") == "success":
-                await params.result_callback({
+                result = {
                     "summary": data.get("summary", ""),
                     "whatsapp_sent": True
-                })
+                }
+                logger.info(f"Returning success result: {result}")
+                await params.result_callback(result)
             else:
-                await params.result_callback({
+                result = {
                     "summary": "I apologize, but I couldn't fetch the detailed information at this moment. Please try again.",
                     "whatsapp_sent": False
-                })
+                }
+                logger.warning(f"API returned non-success status, returning: {result}")
+                await params.result_callback(result)
     except Exception as e:
-        logger.error(f"Error fetching property details: {e}")
+        logger.error(f"❌ Error fetching property details: {e}", exc_info=True)
         await params.result_callback({
             "summary": "I apologize, but I'm having trouble accessing the detailed information right now. Let me help you with general information instead.",
             "whatsapp_sent": False
@@ -325,87 +343,57 @@ async def run_bot(room_url: str, token: str):
         
         logger.info(f"Using Vertex AI model: {model_path}")
 
-        # System instruction for the bot
-        system_instruction = """
-You are a professional real estate agent representing two premium residential projects in India. Your role is to assist potential buyers with information about these properties.
-IMPORTANT: Speak in a colloquial TAMIL tone if the user speaks in TAMIL!
+        # System instruction for the bot - SIMPLIFIED to encourage tool usage
+        system_instruction = """You are a professional real estate agent. 
 
 **PROJECT DETAILS:**
+**SHREE KRISHNA ASHREY - KOLKATA**: 31 luxury homes, 2/3/4 BHK, IGBC certified
+**PALM PREMIERE - CHENNAI**: Villa project in 242-acre township
 
-**1. SHREE KRISHNA ASHREY - KOLKATA**
-- Developer: Yaduka Group
-- Type: Boutique high-rise apartment complex (G+12 structure)
-- Scale: Only 31 luxury homes on 1 Bigha land with 68% open space
-- Certification: IGBC Green Home Pre-Certified (Gold Rating)
-- Location: 88, Satin Sen Sarani, Kolkata
-- Connectivity: Well-connected to Sealdah, Airport, Mani Square Mall, Apollo Hospital
-- Configuration: 2, 3, and 4 BHK apartments with 3-side open layout
-- Special Features: Vastu compliant, earthquake-resistant structure
-- Amenities: Club Upavan (dedicated amenities floor) with terrace garden, lounge, gym, community hall, indoor games, yoga area
-- Security: 24x7 manned security with CCTV surveillance
-- Power: Generator backup for apartments and common areas
-- Registration: Registered with WBHIRA
+**CONVERSATION FLOW:**
+1. Greet warmly and ask for their 10-digit phone number (MANDATORY)
+2. Once you have the phone number, ask what they want to know
+3. For GENERAL queries (location, price range, configurations), answer directly
+4. For DETAILED queries about specific features (kitchen details, bathroom specs, flooring types, technical specifications), ALWAYS use the get_property_details tool
 
-**2. PALM PREMIERE - CHENNAI**
-- Developer: Unitech
-- Type: Villa project within Uniworld City township
-- Scale: Part of massive 242-acre integrated township
-- Location: Nallambakkam, Chennai (off Vandalur-Kelambakkam road)
-- Connectivity: Near IT Corridor (Siruseri SIPCOT), VIT campus
-- Configuration: Multiple villa types (A, B, C, D, E) with 2 or 3 floor options
-- Special Features: Private terraces and gardens, serene green environment
-- Amenities: Modern clubhouse with swimming pool, gym, multipurpose hall, badminton court, school, retail facilities
-- Security: Gated community with 24x7 security and CCTV
-- Power: 1 KW light load backup for each villa
+**WHEN TO USE THE TOOL:**
+- User asks: "Tell me about the kitchen" → USE TOOL
+- User asks: "What bathroom fittings do you have?" → USE TOOL  
+- User asks: "What type of flooring?" → USE TOOL
+- User asks: "What are the technical specifications?" → USE TOOL
+- User asks: "Where is the property?" → ANSWER DIRECTLY (no tool needed)
 
-**COMMON FEATURES:**
-- Premium flooring (marble/vitrified tiles)
-- Branded sanitaryware and fittings
-- Concealed electrical wiring
-- Earthquake-resistant structures
+**HOW TO USE THE TOOL:**
+When you need detailed info, say: "Let me get those details for you and send the brochure to your WhatsApp."
+Then immediately call get_property_details with the query and phone number.
 
-**YOUR CONVERSATION FLOW:**
-1. Greet the caller warmly and introduce yourself as their real estate agent
-MOST VERY VERY IMPORTANT: Wait for the user to give ALL 10 numbers do not PROCEED without receiving all 10 numbers. Some users might pause in the middle, ask them the remaining numbers and then proceed!!!!
-2. Ask for their phone number (10 digits) - THIS IS MANDATORY before proceeding
-3. Once you have the phone number, ask what specific information they would like to know about the properties
-4. For simple queries about location, pricing, configurations, or general features, use the information provided above
-5. For detailed queries about specific features (kitchen, bathrooms, flooring, technical specifications), use the get_property_details tool
-6. **CRITICAL: When you need to use the get_property_details tool, you MUST do the following in a SINGLE response:**
-   - First, SAY: "Let me fetch those detailed specifications for you. This will just take a moment, and I'll also send you the relevant brochure pages on WhatsApp."
-   - Then, immediately make the tool call
-   - After receiving the tool result, continue speaking in the SAME response with the detailed information
-   - Do NOT wait for the user to respond between announcing the fetch and providing the information
-   - This entire sequence (announcement + tool call + result delivery) must happen in ONE continuous exchange
-7. Keep responses conversational, brief (1-2 sentences), and professional
-8. Always be ready to schedule site visits or connect them with the sales team
+Keep responses brief (1-2 sentences) and conversational."""
 
-IMPORTANT: 
-- ALWAYS collect the phone number FIRST before answering any property-related questions
-- Speak ONLY in English
-- Be warm, professional, and helpful
-- When using the tool, the phone number format should be +91 followed immediately by the 10-digit number (no spaces)
-- The tool call workflow (announcement → fetch → response) must be completed in a single conversational turn without breaking into multiple exchanges
-"""
-
-        # Define the property details tool
+        # Define the property details tool with clearer description
         property_details_function = FunctionSchema(
             name="get_property_details",
-            description="Fetch detailed information about property features from the brochure. Use this for specific queries about kitchens, bathrooms, flooring, technical specifications, or any detailed features not covered in the general information.",
+            description="REQUIRED for specific feature queries. Use when user asks about: kitchen details, bathroom specs, flooring types, technical specifications, amenities details, or any specific property features. DO NOT use for general location/price queries.",
             properties={
                 "query": {
                     "type": "string",
-                    "description": "The specific question or detail the user wants to know about the property (e.g., 'Tell me about the kitchen', 'What are the bathroom features?')",
+                    "description": "The user's specific question (e.g., 'kitchen features', 'bathroom fittings', 'flooring details')",
                 },
                 "phone_number": {
                     "type": "string",
-                    "description": "The user's 10-digit phone number (will be prefixed with +91 automatically)",
+                    "description": "User's 10-digit phone number",
                 },
             },
             required=["query", "phone_number"],
         )
 
         tools = ToolsSchema(standard_tools=[property_details_function])
+        
+        logger.info("=" * 60)
+        logger.info("🔧 Tool Configuration:")
+        logger.info(f"Tool name: {property_details_function.name}")
+        logger.info(f"Tool description: {property_details_function.description}")
+        logger.info(f"Tool properties: {property_details_function.properties}")
+        logger.info("=" * 60)
 
         # Initialize Vertex AI LLM Service with tools
         llm = GeminiLiveVertexLLMService(
@@ -414,19 +402,21 @@ IMPORTANT:
             location=location,
             model=model_path,
             system_instruction=system_instruction,
-            voice_id="Puck",  # Options: Aoede, Charon, Fenrir, Kore, Puck
+            voice_id="Puck",
             tools=tools,
         )
 
-        # Register the function
+        # Register the function with detailed logging
+        logger.info("Registering tool function: get_property_details")
         llm.register_function("get_property_details", fetch_property_details)
+        logger.info("✅ Tool function registered successfully")
 
         # Create context with initial greeting
         context = LLMContext(
             [
                 {
                     "role": "user",
-                    "content": "Greet the caller as a real estate agent and ask for their phone number ALL In a Colloquial TAMIL tone."
+                    "content": "Greet the caller warmly and ask for their 10-digit phone number."
                 }
             ]
         )
